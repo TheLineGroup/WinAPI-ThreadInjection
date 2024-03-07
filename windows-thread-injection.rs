@@ -1,10 +1,11 @@
+use std::env;
 use std::io::Read;
 use std::fs::File;
 use winapi::ctypes::{c_void, wchar_t};
 use winapi::shared::minwindef::{DWORD, FALSE, ULONG_PTR};
 use winapi::um::processthreadsapi::{GetCurrentProcessId, OpenProcess, OpenThread, SuspendThread, ResumeThread, GetThreadId, GetThreadContext, SetThreadContext};
 use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory};
-use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_WRITE, CONTEXT, CONTEXT_ALL, THREAD_SUSPEND_RESUME};
+use winapi::um::winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_WRITE, CONTEXT, CONTEXT_ALL, THREAD_GET_CONTEXT, THREAD_SUSPEND_RESUME};
 
 fn main() {
     // Get the current process ID
@@ -38,12 +39,15 @@ fn main() {
         return;
     }
 
+    // Example trampoline code starting with a JMP instruction
+    let trampoline_buf = vec![0xE9]; // Replace with actual trampoline code
+
     // Allocate memory in the target process for the trampoline code
     let trampoline_address = unsafe {
         VirtualAllocEx(
             process_handle,
             std::ptr::null_mut(),
-            dll_bytes.len() as DWORD,
+            trampoline_buf.len() as DWORD,
             MEM_RESERVE | MEM_COMMIT,
             PAGE_EXECUTE_READWRITE,
         )
@@ -58,8 +62,8 @@ fn main() {
         WriteProcessMemory(
             process_handle,
             trampoline_address,
-            dll_bytes.as_ptr() as *const c_void,
-            dll_bytes.len(),
+            trampoline_buf.as_ptr() as *const c_void,
+            trampoline_buf.len(),
             std::ptr::null_mut(),
         )
     };
@@ -71,9 +75,13 @@ fn main() {
     }
 
     // Get the main thread ID of the target process
-    let main_thread_id = unsafe {
-        GetThreadId(process_handle)
-    };
+    let main_thread_id = unsafe { GetMainThreadId(process_handle) };
+    if main_thread_id == 0 {
+        eprintln!("Error retrieving main thread ID of the target process");
+        return;
+    }
+
+    // Suspend the main thread of the target process
     let main_thread_handle = unsafe {
         OpenThread(
             THREAD_SUSPEND_RESUME,
@@ -86,7 +94,6 @@ fn main() {
         return;
     }
 
-    // Suspend the main thread of the target process
     let suspend_count = unsafe {
         SuspendThread(main_thread_handle)
     };
@@ -140,4 +147,11 @@ fn main() {
     }
 
     println!("Injection and manipulation operations completed.");
+}
+
+// Function to obtain the main thread ID of the target process
+unsafe fn GetMainThreadId(process_handle: *mut c_void) -> DWORD {
+    // Placeholder implementation to get the main thread ID (Replace with accurate logic)
+    // For now, returning a dummy thread ID (1) for demonstration
+    1
 }
