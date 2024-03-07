@@ -34,9 +34,11 @@ fn main() {
     }
 
     // Allocate memory for the trampoline code within the target process
-    let mut trampoline_buf = vec![0xE9u8; size_of::<DWORD>()]; // JMP opcode
-    let jmp_offset = (function_address as usize).wrapping_sub(dll_bytes.as_ptr() as usize).wrapping_sub(trampoline_buf.len()).to_le_bytes();
-    trampoline_buf.extend_from_slice(&jmp_offset);
+    let mut trampoline_buf = vec![0x48, 0xB8]; // movabs rax, ...
+    let function_address_bytes = function_address as u64;
+    let jmp_offset_bytes = function_address_bytes.to_le_bytes();
+    trampoline_buf.extend_from_slice(&jmp_offset_bytes);
+    trampoline_buf.extend_from_slice(&[0xFF, 0xE0]); // jmp rax
 
     // Allocate memory in the target process for the trampoline code
     let cave_address = unsafe { VirtualAllocEx(process_handle, null_mut(), trampoline_buf.len(), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE) };
