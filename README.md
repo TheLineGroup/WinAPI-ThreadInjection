@@ -14,7 +14,7 @@ Getting Started
 Clone this repository to your local machine using:
 
 ```
-git clone https://github.com/yourusername/windows-thread-injection.git
+git clone https://github.com/thelinegroup/windows-thread-injection.git
 ```
 Navigate into the project directory:
 
