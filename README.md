@@ -1,6 +1,7 @@
 Windows Thread Injection and Manipulation (Experimental)
 
-![thread-inject](https://github.com/TheLineGroup/windows-thread-injection/assets/37847231/86f9a0f9-0cc8-4b31-bf51-735a8efcacec)
+![thread injection and manipulation within a Windows operating environment, using Rust](https://github.com/TheLineGroup/windows-thread-injection/assets/37847231/400b7913-c5e9-43fd-a400-8a668bfd3d9a)
+
 
 This experimental project showcases an advanced method for injecting and executing custom code within a thread of a Windows process using Rust. It demonstrates a sophisticated technique that involves crafting a trampoline buffer to seamlessly jump to a specified target address while manipulating thread contexts to redirect execution flow.
 
