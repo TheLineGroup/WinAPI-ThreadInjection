@@ -2,22 +2,23 @@ Windows Thread Injection and Manipulation (Experimental)
 
 ![thread injection and manipulation within a Windows operating environment, using Rust](https://github.com/TheLineGroup/windows-thread-injection/assets/37847231/400b7913-c5e9-43fd-a400-8a668bfd3d9a)
 
+Windows Thread Injection and Manipulation (Experimental)
 
-This experimental project showcases an advanced method for injecting and executing custom code within a thread of a Windows process using Rust. It demonstrates a sophisticated technique that involves crafting a trampoline buffer to seamlessly jump to a specified target address while manipulating thread contexts to redirect execution flow.
+This project provides an insightful exploration into thread injection and manipulation within a Windows environment, leveraging the Rust programming language. It embodies an experimental approach to executing custom code within a thread of a Windows process. At its core, the project demonstrates a meticulous method that includes the creation of a trampoline buffer for a smooth transition to a target address and the manipulation of thread contexts for execution flow redirection.
 
 Key Features
 
-Thread Context Manipulation: Utilizes WinAPI to manipulate thread contexts, enabling the precise control needed for code injection.
-Custom Trampoline Injection: Dynamically generates and injects trampoline code into a target process, facilitating execution redirection to user-specified code.
-Execution Redirection: Alters the execution flow within a target thread, directing it towards custom injected code, showcasing the potential for advanced process manipulation.
+Thread Context Manipulation: Employs WinAPI for fine-grained thread context control, facilitating precise code injection.
+Custom Trampoline Injection: Innovatively generates and inserts trampoline code into a target process, enabling redirection to user-defined code.
+Execution Redirection: Modifies the execution path within a target thread to route towards the injected code, illustrating advanced capabilities in process manipulation.
 
 Prerequisites
 
-Before diving into this experimental endeavor, ensure you meet the following requirements:
+To embark on this experimental journey, ensure you have:
 
-A Rust programming environment setup on your machine.
+A Rust programming environment configured on your system.
 
-A Windows development environment equipped with the necessary SDKs for WinAPI usage.
+A Windows development setup with necessary SDKs for WinAPI interactions.
 
 Getting Started
 
@@ -41,26 +42,28 @@ cargo build --release
 
 Usage Guide
 
-The core functionality of this project resides within the main.rs file, https://github.com/BlackSnufkin/NovaLdr/blob/main/src/main.rs. You'll need to adjust the target address and path to your target DLL as per your requirements. The provided example demonstrates how to:
+The essence of this project is encapsulated in main.rs. Adjustments to the target address and the path to your target DLL are required based on your needs. The process involves:
 
-Allocate memory within a target process specifically for the trampoline code.
-Inject the crafted trampoline code into the allocated memory space.
-Modify the context of a target thread to redirect its execution to the injected code.
-Note: This project is designed for experimental and educational purposes only. Exercise caution and ensure you have explicit permission to manipulate processes and threads on any target system.
+Allocating memory in the target process for trampoline code.
+Injecting the trampoline into this allocated space.
+Altering a target thread's context to divert execution towards the injected code.
+
+Note: This project is designed for educational and experimental use only. Ensure legality and ethical compliance when manipulating processes and threads on any system.
 
 Contributing
 
-Contributions aimed at enhancing and refining the project are highly encouraged. To contribute, please adhere to the standard GitHub pull request process for submitting your enhancements.
+Contributions that enhance and refine the project are welcome. For contributions, please follow the standard GitHub pull request process.
 
 License
 
-This project is made available under the MIT License. For more details, refer to the LICENSE file included in the repository.
+This project is released under the MIT License. Refer to the LICENSE file in the repository for more details.
 
 Disclaimer
 
-This software is intended solely for educational and research purposes. Any use of this code must be undertaken with full consideration of legality and adherence to ethical standards. The authors disclaim any liability for misuse or damages resulting from the use of this software.
+This software is intended for educational and research purposes only. Users must consider legal and ethical implications fully. The authors are not liable for any misuse or damages arising from this software's usage.
 
 Acknowledgments
 
-WinAPI: Essential for the process and thread manipulation functionalities showcased in this project.
-Rust Community: For ongoing support and the rich set of resources available to Rust developers.
+WinAPI: A cornerstone for the demonstrated process and thread manipulation functionalities.
+
+Rust Community: For continuous support and providing a wealth of resources to Rust developers.
