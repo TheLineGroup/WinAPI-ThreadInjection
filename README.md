@@ -42,7 +42,7 @@ cargo build --release
 
 Usage Guide
 
-The essence of this project is encapsulated in main.rs. Adjustments to the target address and the path to your target DLL are required based on your needs. The process involves:
+The essence of this project is encapsulated in main.rs, https://github.com/BlackSnufkin/NovaLdr/blob/main/src/main.rs. Adjustments to the target address and the path to your target DLL are required based on your needs. The process involves:
 
 Allocating memory in the target process for trampoline code.
 Injecting the trampoline into this allocated space.
