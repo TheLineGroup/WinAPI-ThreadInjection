@@ -1,4 +1,9 @@
-use std::sync::{Arc, Mutex};
+//Key Features
+//Safe Trampoline Injection: Crafts and injects a trampoline buffer into a safe memory region of the target process, enabling a smooth transition to custom code.
+//APC Injection Methodology: Utilizes APCs to queue the execution of custom code within the context of a specific thread, showcasing a stealthy injection technique.
+//Thread Execution Control: Offers precise control over thread execution, including suspending and resuming threads to ensure synchronization with the injected payload.
+//Timeout Mechanism: Implements a timeout for payload execution, enhancing the robustness and reliability of the thread hijacking process.use std::sync::{Arc, Mutex};
+
 use std::time::{Duration, Instant};
 use std::ptr::null_mut;
 use winapi::um::winnt::{HANDLE, PVOID, ULONG, NT_SUCCESS};
