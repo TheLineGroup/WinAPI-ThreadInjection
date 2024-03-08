@@ -9,7 +9,9 @@ This project provides an insightful exploration into thread injection and manipu
 Key Features
 
 Thread Context Manipulation: Employs WinAPI for fine-grained thread context control, facilitating precise code injection.
+
 Custom Trampoline Injection: Innovatively generates and inserts trampoline code into a target process, enabling redirection to user-defined code.
+
 Execution Redirection: Modifies the execution path within a target thread to route towards the injected code, illustrating advanced capabilities in process manipulation.
 
 Prerequisites
