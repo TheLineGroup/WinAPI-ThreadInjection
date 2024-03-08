@@ -41,7 +41,7 @@ cargo build --release
 
 Usage Guide
 
-The core functionality of this project resides within the main.rs file. You'll need to adjust the target address and path to your target DLL as per your requirements. The provided example demonstrates how to:
+The core functionality of this project resides within the main.rs file, https://github.com/BlackSnufkin/NovaLdr/blob/main/src/main.rs. You'll need to adjust the target address and path to your target DLL as per your requirements. The provided example demonstrates how to:
 
 Allocate memory within a target process specifically for the trampoline code.
 Inject the crafted trampoline code into the allocated memory space.
